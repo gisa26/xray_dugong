@@ -35,7 +35,7 @@ print_error() {
 
 # Set your Cloudflare API credentials
 API_EMAIL="gisasafitri26@gmail.com"
-API_KEY="cfat_iQnsXOf0cApVxDj9qzvWYJbdaInvaJJQZIPFq0eq856d59e1"
+API_KEY="cfut_XxgsK3q9KEmQVOabiz1drH4L44IMnJ6G79nNpAV539e450f9"
 
 # Set the DNS record details
 TYPE_A="A"
