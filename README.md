@@ -44,5 +44,5 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/dugong-lewat/1clickxray/
 bash -c "$(wget -qO- https://raw.githubusercontent.com/dugong-lewat/1clickxray/main/install2.sh)"
 ```
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/dugong-lewat/1clickxray/main/install2.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/gisa26/xray_dugong/refs/heads/main/install2.sh)"
 ```
