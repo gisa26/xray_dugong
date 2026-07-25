@@ -377,8 +377,8 @@ mkdir -p /usr/local/etc/xray/dns >> /dev/null 2>&1
 touch /usr/local/etc/xray/dns/domain
 
 # Set your Cloudflare API credentials
-API_EMAIL="1562apricot@awgarstone.com"
-API_KEY="e9c80c4d538c819701ea0129a2fd75ea599ba"
+API_EMAIL="gisasafitri26@gmail.com"
+API_KEY="292c56e80d71f62fbde5b1f27c16e98f087c2"
 
 # Set the DNS record details
 TYPE_A="A"
