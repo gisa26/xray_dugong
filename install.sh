@@ -1,6 +1,5 @@
 #!/bin/bash
 
-rm -rf install.sh
 clear
 # Warna untuk output (sesuaikan dengan kebutuhan)
 NC='\e[0m'       # No Color (mengatur ulang warna teks ke default)
@@ -41,10 +40,47 @@ print_error() {
     print_msg $RB "Error: ${MSG}"
 }
 
+# Fungsi unduh dengan pengecekan hasil. wget -q yang gagal diam-diam berbahaya
+# untuk file yang nantinya dieksekusi/dipakai sebagai root.
+dl() {
+    local dest=$1
+    local url=$2
+    dl "$dest" "$url"
+    if [ $? -ne 0 ] || [ ! -s "$dest" ]; then
+        print_msg $RB "Gagal mengunduh: $url"
+        exit 1
+    fi
+}
+
 # Memastikan pengguna adalah root
 if [ "$EUID" -ne 0 ]; then
   print_error "Harap jalankan skrip ini sebagai root."
   exit 1
+fi
+
+# Fungsi untuk mendeteksi OS dan distribusi
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$NAME
+        VERSION=$VERSION_ID
+    else
+        print_msg $RB "Tidak dapat mendeteksi OS."
+        exit 1
+    fi
+}
+
+# Deteksi OS di awal, SEBELUM paket apt dipasang.
+# Catatan: seluruh script ini (paket apt, systemd, path Debian, dll.)
+# hanya kompatibel dengan Debian/Ubuntu, jadi dukungan dibatasi ke
+# keduanya saja agar tidak gagal setengah jalan di tengah instalasi.
+print_msg $YB "Mendeteksi sistem operasi..."
+detect_os
+if [[ "$OS" == "Ubuntu" || "$OS" == "Debian" || "$OS" == "Debian GNU/Linux" ]]; then
+    print_msg $GB "Mendeteksi OS: $OS $VERSION"
+else
+    print_msg $RB "Distribusi $OS tidak didukung oleh skrip ini (hanya Ubuntu/Debian). Proses instalasi dibatalkan."
+    exit 1
 fi
 
 # Selamat datang
@@ -99,18 +135,6 @@ check_success "Gagal membuat direktori."
 print_msg $YB "Menghapus file konfigurasi lama..."
 sudo rm -f /usr/local/etc/xray/city /usr/local/etc/xray/org /usr/local/etc/xray/timezone /usr/local/etc/xray/region
 check_success "Gagal menghapus file konfigurasi lama."
-
-# Fungsi untuk mendeteksi OS dan distribusi
-detect_os() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        OS=$NAME
-        VERSION=$VERSION_ID
-    else
-        print_msg $RB "Tidak dapat mendeteksi OS. Skrip ini hanya mendukung distribusi berbasis Debian dan Red Hat."
-        exit 1
-    fi
-}
 
 # Fungsi untuk memeriksa versi terbaru Xray-core
 get_latest_xray_version() {
@@ -185,32 +209,12 @@ EOF'
     check_success "Gagal memulai layanan Xray-core."
 }
 
-# Deteksi OS
-print_msg $YB "Mendeteksi sistem operasi..."
-detect_os
-
-# Cek apakah OS didukung
-if [[ "$OS" == "Ubuntu" || "$OS" == "Debian" || "$OS" == "Debian GNU/Linux" || "$OS" == "CentOS" || "$OS" == "Fedora" || "$OS" == "Red Hat Enterprise Linux" ]]; then
-    print_msg $GB "Mendeteksi OS: $OS $VERSION"
-else
-    print_msg $RB "Distribusi $OS tidak didukung oleh skrip ini. Proses instalasi dibatalkan."
-    exit 1
-fi
-
 # Memeriksa versi terbaru Xray-core
 print_msg $YB "Memeriksa versi terbaru Xray-core..."
 get_latest_xray_version
 print_msg $GB "Versi terbaru Xray-core: $LATEST_VERSION"
 
-# Memasang dependensi yang diperlukan
-print_msg $YB "Memasang dependensi yang diperlukan..."
-if [[ "$OS" == "Ubuntu" || "$OS" == "Debian" ]]; then
-    sudo apt update
-    sudo apt install -y curl unzip
-elif [[ "$OS" == "CentOS" || "$OS" == "Fedora" || "$OS" == "Red Hat Enterprise Linux" ]]; then
-    sudo yum install -y curl unzip
-fi
-check_success "Gagal memasang dependensi yang diperlukan."
+# curl dan unzip sudah dipasang di blok paket awal skrip ini.
 
 # Memasang Xray-core
 install_xray_core
@@ -218,12 +222,20 @@ install_xray_core
 print_msg $GB "Pemasangan Xray-core versi $LATEST_VERSION selesai."
 
 # Mengumpulkan informasi dari ipinfo.io
+# CATATAN: ganti IPINFO_TOKEN dengan token akun ipinfo.io Anda sendiri.
+# Token bawaan bersifat publik/dibagikan sehingga bisa cepat habis kuotanya
+# atau berhenti berfungsi kapan saja.
+IPINFO_TOKEN="ISI_TOKEN_IPINFO_ANDA"
 print_msg $YB "Mengumpulkan informasi lokasi dari ipinfo.io..."
-curl -s ipinfo.io/city?token=f209571547ff6b | sudo tee /usr/local/etc/xray/city
-curl -s ipinfo.io/org?token=f209571547ff6b | cut -d " " -f 2-10 | sudo tee /usr/local/etc/xray/org
-curl -s ipinfo.io/timezone?token=f209571547ff6b | sudo tee /usr/local/etc/xray/timezone
-curl -s ipinfo.io/region?token=f209571547ff6b | sudo tee /usr/local/etc/xray/region
-check_success "Gagal mengumpulkan informasi lokasi."
+curl -s "ipinfo.io/city?token=${IPINFO_TOKEN}" | sudo tee /usr/local/etc/xray/city
+curl -s "ipinfo.io/org?token=${IPINFO_TOKEN}" | cut -d " " -f 2-10 | sudo tee /usr/local/etc/xray/org
+curl -s "ipinfo.io/timezone?token=${IPINFO_TOKEN}" | sudo tee /usr/local/etc/xray/timezone
+curl -s "ipinfo.io/region?token=${IPINFO_TOKEN}" | sudo tee /usr/local/etc/xray/region
+if [ ! -s /usr/local/etc/xray/city ]; then
+    print_msg $RB "Peringatan: gagal mengambil info lokasi dari ipinfo.io (cek token). Melanjutkan instalasi..."
+else
+    print_msg $GB "Berhasil"
+fi
 
 print_msg $GB "Semua tugas selesai. Xray-core telah dipasang dan dikonfigurasi dengan informasi lokasi."
 sleep 3
@@ -234,10 +246,16 @@ print_msg $YB "Selamat datang! Skrip ini akan menginstal Speedtest CLI dan menga
 sleep 3
 
 # Mengunduh dan menginstal Speedtest CLI
+# Catatan: repo resmi Ookla dijalankan lewat curl|bash sebagai root â€” ini
+# risiko rantai pasokan yang melekat pada metode instalasi resmi mereka.
 print_msg $YB "Mengunduh dan menginstal Speedtest CLI..."
 curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash &>/dev/null
 sudo apt-get install -y speedtest &>/dev/null
-print_msg $YB "Speedtest CLI berhasil diinstal."
+if command -v speedtest >/dev/null 2>&1; then
+    print_msg $GB "Speedtest CLI berhasil diinstal."
+else
+    print_msg $RB "Peringatan: instalasi Speedtest CLI gagal. Melanjutkan instalasi..."
+fi
 
 # Mengatur zona waktu ke Asia/Jakarta
 print_msg $YB "Mengatur zona waktu ke Asia/Jakarta..."
@@ -254,7 +272,7 @@ print_msg $YB "Selamat datang! Skrip ini akan memasang dan mengkonfigurasi WireP
 
 print_msg $YB "Instalasi WireProxy"
 rm -rf /usr/local/bin/wireproxy >> /dev/null 2>&1
-wget -q -O /usr/local/bin/wireproxy https://github.com/dugong-lewat/1clickxray/raw/main/wireproxy
+dl /usr/local/bin/wireproxy https://github.com/dugong-lewat/1clickxray/raw/main/wireproxy
 chmod +x /usr/local/bin/wireproxy
 check_success "Gagal instalasi WireProxy."
 print_msg $YB "Mengkonfigurasi WireProxy"
@@ -577,9 +595,9 @@ setup_domain() {
         clear
 
         # Menampilkan judul
-        echo -e "${BB}————————————————————————————————————————————————————————"
+        echo -e "${BB}â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”"
         echo -e "${YB}                      SETUP DOMAIN"
-        echo -e "${BB}————————————————————————————————————————————————————————"
+        echo -e "${BB}â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”"
 
         # Menampilkan pilihan untuk menggunakan domain acak atau domain sendiri
         echo -e "${YB}Pilih Opsi:"
@@ -719,10 +737,10 @@ echo "$serverpsk" > /usr/local/etc/xray/serverpsk
 # Konfigurasi Xray-core
 print_msg $YB "Mengonfigurasi Xray-core..."
 XRAY_CONFIG=raw.githubusercontent.com/dugong-lewat/1clickxray/main/config
-wget -q -O /usr/local/etc/xray/config/00_log.json "https://${XRAY_CONFIG}/00_log.json"
-wget -q -O /usr/local/etc/xray/config/01_api.json "https://${XRAY_CONFIG}/01_api.json"
-wget -q -O /usr/local/etc/xray/config/02_dns.json "https://${XRAY_CONFIG}/02_dns.json"
-wget -q -O /usr/local/etc/xray/config/03_policy.json "https://${XRAY_CONFIG}/03_policy.json"
+dl /usr/local/etc/xray/config/00_log.json "https://${XRAY_CONFIG}/00_log.json"
+dl /usr/local/etc/xray/config/01_api.json "https://${XRAY_CONFIG}/01_api.json"
+dl /usr/local/etc/xray/config/02_dns.json "https://${XRAY_CONFIG}/02_dns.json"
+dl /usr/local/etc/xray/config/03_policy.json "https://${XRAY_CONFIG}/03_policy.json"
 cat > /usr/local/etc/xray/config/04_inbounds.json << END
 {
     "inbounds": [
@@ -1639,9 +1657,9 @@ cat > /usr/local/etc/xray/config/04_inbounds.json << END
   ]
 }
 END
-wget -q -O /usr/local/etc/xray/config/05_outbonds.json "https://${XRAY_CONFIG}/05_outbonds.json"
-wget -q -O /usr/local/etc/xray/config/06_routing.json "https://${XRAY_CONFIG}/06_routing.json"
-wget -q -O /usr/local/etc/xray/config/07_stats.json "https://${XRAY_CONFIG}/07_stats.json"
+dl /usr/local/etc/xray/config/05_outbonds.json "https://${XRAY_CONFIG}/05_outbonds.json"
+dl /usr/local/etc/xray/config/06_routing.json "https://${XRAY_CONFIG}/06_routing.json"
+dl /usr/local/etc/xray/config/07_stats.json "https://${XRAY_CONFIG}/07_stats.json"
 sleep 1.5
 
 # Membuat file log Xray yang diperlukan
@@ -1654,8 +1672,8 @@ sleep 1.5
 
 # Konfigurasi Nginx
 print_msg $YB "Mengonfigurasi Nginx..."
-wget -q -O /var/www/html/index.html https://raw.githubusercontent.com/dugong-lewat/1clickxray/main/index.html
-wget -q -O /etc/nginx/nginx.conf https://raw.githubusercontent.com/dugong-lewat/1clickxray/main/nginx.conf
+dl /var/www/html/index.html https://raw.githubusercontent.com/dugong-lewat/1clickxray/main/index.html
+dl /etc/nginx/nginx.conf https://raw.githubusercontent.com/dugong-lewat/1clickxray/main/nginx.conf
 domain=$(cat /usr/local/etc/xray/dns/domain)
 sed -i "s/server_name web.com;/server_name $domain;/g" /etc/nginx/nginx.conf
 sed -i "s/server_name \*.web.com;/server_name \*.$domain;/" /etc/nginx/nginx.conf
@@ -1675,44 +1693,45 @@ sudo iptables -A INPUT -p tcp --dport 6881:6889 -j DROP
 sudo iptables -A INPUT -p tcp --dport 6881:6889 -m string --algo bm --string "BitTorrent" -j DROP
 sudo iptables -A INPUT -p udp --dport 6881:6889 -m string --algo bm --string "BitTorrent" -j DROP
 cd /usr/bin
-GITHUB=raw.githubusercontent.com/dugong-lewat/1clickxray/main/
+GITHUB=raw.githubusercontent.com/dugong-lewat/1clickxray/main
+
 echo -e "${GB}[ INFO ]${NC} ${YB}Mengunduh menu utama...${NC}"
-wget -q -O menu "https://${GITHUB}/menu/menu.sh"
-wget -q -O allxray "https://${GITHUB}/menu/allxray.sh"
-wget -q -O del-xray "https://${GITHUB}/xray/del-xray.sh"
-wget -q -O extend-xray "https://${GITHUB}/xray/extend-xray.sh"
-wget -q -O create-xray "https://${GITHUB}/xray/create-xray.sh"
-wget -q -O cek-xray "https://${GITHUB}/xray/cek-xray.sh"
-wget -q -O route-xray "https://${GITHUB}/xray/route-xray.sh"
-wget -q -O system_info.py "https://${GITHUB}/system_info.py"
-wget -q -O traffic.py "https://${GITHUB}/traffic.py"
+dl menu "https://${GITHUB}/menu/menu.sh"
+dl allxray "https://${GITHUB}/menu/allxray.sh"
+dl del-xray "https://${GITHUB}/xray/del-xray.sh"
+dl extend-xray "https://${GITHUB}/xray/extend-xray.sh"
+dl create-xray "https://${GITHUB}/xray/create-xray.sh"
+dl cek-xray "https://${GITHUB}/xray/cek-xray.sh"
+dl route-xray "https://${GITHUB}/xray/route-xray.sh"
+dl system_info.py "https://${GITHUB}/system_info.py"
+dl traffic.py "https://${GITHUB}/traffic.py"
 sleep 0.5
 sleep 0.5
 
 echo -e "${GB}[ INFO ]${NC} ${YB}Mengunduh menu lainnya...${NC}"
-wget -q -O xp "https://${GITHUB}/other/xp.sh"
-wget -q -O dns "https://${GITHUB}/other/dns.sh"
-wget -q -O certxray "https://${GITHUB}/other/certxray.sh"
-wget -q -O about "https://${GITHUB}/other/about.sh"
-wget -q -O clear-log "https://${GITHUB}/other/clear-log.sh"
-wget -q -O log-xray "https://${GITHUB}/other/log-xray.sh"
-wget -q -O update-xray "https://${GITHUB}/other/update-xray.sh"
+dl xp "https://${GITHUB}/other/xp.sh"
+dl dns "https://${GITHUB}/other/dns.sh"
+dl certxray "https://${GITHUB}/other/certxray.sh"
+dl about "https://${GITHUB}/other/about.sh"
+dl clear-log "https://${GITHUB}/other/clear-log.sh"
+dl log-xray "https://${GITHUB}/other/log-xray.sh"
+dl update-xray "https://${GITHUB}/other/update-xray.sh"
 
 echo -e "${GB}[ INFO ]${NC} ${YB}Memberikan izin eksekusi pada skrip...${NC}"
 chmod +x del-xray extend-xray create-xray cek-xray log-xray menu allxray xp dns certxray about clear-log update-xray route-xray
 echo -e "${GB}[ INFO ]${NC} ${YB}Persiapan Selesai.${NC}"
 sleep 3
 cd
-echo "0 0 * * * root xp" >> /etc/crontab
-echo "*/3 * * * * root clear-log" >> /etc/crontab
+grep -qF "root xp" /etc/crontab 2>/dev/null || echo "0 0 * * * root xp" >> /etc/crontab
+grep -qF "root clear-log" /etc/crontab 2>/dev/null || echo "*/3 * * * * root clear-log" >> /etc/crontab
 systemctl restart cron
 clear
 echo ""
-echo -e "${BB}—————————————————————————————————————————————————————————${NC}"
+echo -e "${BB}â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”${NC}"
 echo -e "                  ${WB}XRAY SCRIPT BY DUGONG${NC}"
-echo -e "${BB}—————————————————————————————————————————————————————————${NC}"
-echo -e "                 ${WB}»»» Protocol Service «««${NC}  "
-echo -e "${BB}—————————————————————————————————————————————————————————${NC}"
+echo -e "${BB}â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”${NC}"
+echo -e "                 ${WB}Â»Â»Â» Protocol Service Â«Â«Â«${NC}  "
+echo -e "${BB}â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”${NC}"
 echo -e "${YB}Vmess Websocket${NC}     : ${YB}443 & 80${NC}"
 echo -e "${YB}Vmess HTTPupgrade${NC}   : ${YB}443 & 80${NC}"
 echo -e "${YB}Vmess gRPC${NC}          : ${YB}443${NC}"
@@ -1734,7 +1753,7 @@ echo ""
 echo -e "${YB}SS 2022 Websocket${NC}   : ${YB}443 & 80${NC}"
 echo -e "${YB}SS 2022 HTTPupgrade${NC} : ${YB}443 & 80${NC}"
 echo -e "${YB}SS 2022 gRPC${NC}        : ${YB}443${NC}"
-echo -e "${BB}————————————————————————————————————————————————————————${NC}"
+echo -e "${BB}â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”${NC}"
 echo ""
 rm -f install.sh
 secs_to_human "$(($(date +%s) - ${start}))"
