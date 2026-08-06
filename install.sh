@@ -114,7 +114,14 @@ sleep 1
 print_msg $YB "Memasang build-essential dan dependensi lainnya..."
 apt install build-essential libpcre3 libpcre3-dev zlib1g zlib1g-dev openssl libssl-dev gcc clang llvm g++ valgrind make cmake debian-keyring debian-archive-keyring apt-transport-https systemd bind9-host gnupg2 ca-certificates lsb-release ubuntu-keyring debian-archive-keyring -y
 apt install unzip python-is-python3 python3-pip -y
-pip install psutil pandas tabulate rich py-cpuinfo distro requests pycountry geoip2 --break-system-packages
+# --break-system-packages hanya dikenal pip versi baru (terkait PEP 668,
+# Ubuntu 23.04+/Debian 12+). Di Ubuntu 20.04 dst. (pip lama) opsi ini
+# tidak ada dan bikin pip gagal total. Deteksi dulu sebelum dipakai.
+PIP_EXTRA_ARGS=""
+if pip3 install --help 2>/dev/null | grep -q -- "--break-system-packages"; then
+    PIP_EXTRA_ARGS="--break-system-packages"
+fi
+pip install psutil pandas tabulate rich py-cpuinfo distro requests pycountry geoip2 $PIP_EXTRA_ARGS
 check_success
 sleep 1
 
